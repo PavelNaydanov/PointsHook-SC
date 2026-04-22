@@ -136,4 +136,35 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
 
         assertEq(pointsBalanceAfterSwap - pointsBalanceOriginal, 2 * 10 ** 14);
     }
+
+    function test_swap_withoutPoints() public {
+        uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+        uint256 pointsBalanceOriginal = hook.balanceOf(
+            address(this),
+            poolIdUint
+        );
+
+        // Set user address in hook data
+        bytes memory hookData = abi.encode(address(this));
+
+        swapRouter.swap(
+            key,
+            SwapParams({
+                zeroForOne: false,
+                amountSpecified: 0.001 ether, // Exact output for input swap
+                sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+            }),
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            hookData
+        );
+        uint256 pointsBalanceAfterSwap = hook.balanceOf(
+            address(this),
+            poolIdUint
+        );
+
+        assertEq(pointsBalanceAfterSwap - pointsBalanceOriginal, 0);
+    }
 }
