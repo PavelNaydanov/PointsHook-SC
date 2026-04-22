@@ -18,6 +18,7 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {TickBitmap} from "v4-core/libraries/TickBitmap.sol";
 import {SqrtPriceMath} from "v4-core/libraries/SqrtPriceMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 
@@ -27,7 +28,6 @@ import "forge-std/console.sol";
 import {PointsHook} from "../src/PointsHook.sol";
 
 contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
-
     MockERC20 token; // our token to use in the ETH-TOKEN pool
 
     // Native tokens are represented by address(0)
@@ -62,20 +62,30 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
         token.approve(address(modifyLiquidityRouter), type(uint256).max);
 
         // Initialize a pool
+        uint160 initialSqrtPrice = SQRT_PRICE_2_1;
+
         (key, ) = initPool(
             ethCurrency, // Currency 0 = ETH
             tokenCurrency, // Currency 1 = TOKEN
             hook, // Hook Contract
             3000, // Swap Fees
-            SQRT_PRICE_1_1 // Initial Sqrt(P) value = 1
+            initialSqrtPrice
         );
 
-        // Add some liquidity to the pool
-        uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(60);
+        // Add liquidity in a range centered on the pool's current tick,
+        // aligned down to the pool's tick spacing.
+        int24 tickSpacing = key.tickSpacing;
+        int24 currentTick = TickMath.getTickAtSqrtPrice(initialSqrtPrice);
+        int24 alignedTick = TickBitmap.compress(currentTick, tickSpacing) * tickSpacing;
+
+        int24 tickLower = alignedTick - tickSpacing;
+        int24 tickUpper = alignedTick + tickSpacing;
+
+        uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(tickUpper);
 
         uint256 ethToAdd = 0.003 ether;
         uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(
-            SQRT_PRICE_1_1,
+            initialSqrtPrice,
             sqrtPriceAtTickUpper,
             ethToAdd
         );
@@ -83,8 +93,8 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
         modifyLiquidityRouter.modifyLiquidity{value: ethToAdd}(
             key,
             ModifyLiquidityParams({
-                tickLower: -60,
-                tickUpper: 60,
+                tickLower: tickLower,
+                tickUpper: tickUpper,
                 liquidityDelta: int256(uint256(liquidityDelta)),
                 salt: bytes32(0)
             }),
@@ -123,6 +133,7 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
             address(this),
             poolIdUint
         );
+
         assertEq(pointsBalanceAfterSwap - pointsBalanceOriginal, 2 * 10 ** 14);
     }
 }
