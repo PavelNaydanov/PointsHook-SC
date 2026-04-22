@@ -21,6 +21,7 @@ import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {TickBitmap} from "v4-core/libraries/TickBitmap.sol";
 import {SqrtPriceMath} from "v4-core/libraries/SqrtPriceMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {ERC1155TokenReceiver} from "solmate/src/tokens/ERC1155.sol";
 
@@ -28,6 +29,8 @@ import "forge-std/console.sol";
 import {PointsHook} from "../src/PointsHook.sol";
 
 contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
+    using StateLibrary for IPoolManager;
+
     MockERC20 token; // our token to use in the ETH-TOKEN pool
 
     // Native tokens are represented by address(0)
@@ -112,6 +115,9 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
         // Set user address in hook data
         bytes memory hookData = abi.encode(address(this));
 
+        (uint160 sqrtPriceX96, , , ) = manager.getSlot0(key.toId());
+        uint160 sqrtPriceLimitX96 = sqrtPriceX96 * 9950 / 10000; // Set a price limit that is 0.5% worse than the current price to ensure the swap goes through even with price impact
+
         // Now we swap
         // We will swap 0.001 ether for tokens
         // We should get 20% of 0.001 * 10**18 points
@@ -121,7 +127,7 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
             SwapParams({
                 zeroForOne: true,
                 amountSpecified: -0.001 ether, // Exact input for output swap
-                sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+                sqrtPriceLimitX96: sqrtPriceLimitX96
             }),
             PoolSwapTest.TestSettings({
                 takeClaims: false,
@@ -147,12 +153,15 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
         // Set user address in hook data
         bytes memory hookData = abi.encode(address(this));
 
+        (uint160 sqrtPriceX96, , , ) = manager.getSlot0(key.toId());
+        uint160 sqrtPriceLimitX96 = sqrtPriceX96 * 10050 / 10000; // Set a price limit that is 0.5% better than the current price to ensure the swap goes through even with price impact
+
         swapRouter.swap(
             key,
             SwapParams({
                 zeroForOne: false,
                 amountSpecified: 0.001 ether, // Exact output for input swap
-                sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+                sqrtPriceLimitX96: sqrtPriceLimitX96
             }),
             PoolSwapTest.TestSettings({
                 takeClaims: false,
